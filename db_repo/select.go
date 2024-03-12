@@ -12,3 +12,10 @@ func UserExists(db *sql.DB, userId string) (bool, error) {
 
 	return exists, nil
 }
+
+func GetUserEntry(db *sql.DB, userId string) (UserEntry, error) {
+	sql := `select userId, key, iv from keystore where userId = ?`
+	var user UserEntry
+	err := db.QueryRow(sql, userId).Scan(&user.UserId, &user.Key, &user.Iv)
+	return user, err
+}
