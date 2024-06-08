@@ -43,13 +43,22 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /user/{userId}/exists", AuthMiddleware(GetKey))
+	mux.HandleFunc("GET /user/{userId}/exists", AuthMiddleware(GetUserExists))
 	mux.HandleFunc("GET /user/{userId}/entry", AuthMiddleware(GetUserEntry))
 	mux.HandleFunc("POST /user/{userId}/entry", AuthMiddleware(AddUserEntry))
 	mux.HandleFunc("DELETE /user/{userId}/entry", AuthMiddleware(DeleteUserEntry))
 
 	if err = http.ListenAndServe("localhost:8081", mux); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func LogMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		fmt.Println("Start Log Middleware ")
+		next.ServeHTTP(w, r)
+		fmt.Println("Goodbye from Log Middleware: ")
 	}
 }
 
@@ -79,7 +88,7 @@ func GetUserEntry(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetKey(w http.ResponseWriter, r *http.Request) {
+func GetUserExists(w http.ResponseWriter, r *http.Request) {
 	userId := r.PathValue("userId")
 
 	exists, err := dbrepo.UserExists(db, userId)
