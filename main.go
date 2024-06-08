@@ -45,6 +45,7 @@ func main() {
 
 	mux.HandleFunc("GET /user/{userId}/exists", AuthMiddleware(GetUserExists))
 	mux.HandleFunc("GET /user/{userId}/entry", AuthMiddleware(GetUserEntry))
+	mux.HandleFunc("GET /health", AuthMiddleware(HealthCheck))
 	mux.HandleFunc("POST /user/{userId}/entry", AuthMiddleware(AddUserEntry))
 	mux.HandleFunc("DELETE /user/{userId}/entry", AuthMiddleware(DeleteUserEntry))
 
@@ -71,6 +72,15 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next.ServeHTTP(w, r)
 	}
+}
+
+func HealthCheck(w http.ResponseWriter, r *http.Request) {
+	err := dbrepo.HealthCheck(db)
+	if err != nil {
+		log.Println(err.Error())
+		http.Error(w, "Unhealthy", http.StatusInternalServerError)
+	}
+	w.Write([]byte("Healthy"))
 }
 
 func GetUserEntry(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +140,7 @@ func AddUserEntry(w http.ResponseWriter, r *http.Request) {
 
 func DeleteUserEntry(w http.ResponseWriter, r *http.Request) {
 	userId := r.PathValue("userId")
-	count, err := dbrepo.DelteUser(db, userId)
+	count, err := dbrepo.DeleteUser(db, userId)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
