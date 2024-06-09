@@ -45,7 +45,7 @@ func main() {
 
 	mux.HandleFunc("GET /user/{userId}/exists", AuthMiddleware(GetUserExists))
 	mux.HandleFunc("GET /user/{userId}/entry", AuthMiddleware(GetUserEntry))
-	mux.HandleFunc("GET /healthy", AuthMiddleware(HealthCheck))
+	mux.HandleFunc("GET /health", AuthMiddleware(HealthCheck))
 	mux.HandleFunc("POST /user/{userId}/entry", AuthMiddleware(AddUserEntry))
 	mux.HandleFunc("DELETE /user/{userId}/entry", AuthMiddleware(DeleteUserEntry))
 
