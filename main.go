@@ -67,6 +67,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		receivedKey := r.Header.Get("X-API-KEY")
 		if receivedKey != apiKey {
+			log.Println("Wrong api key")
 			http.Error(w, "Wrong api key", http.StatusUnauthorized)
 			return
 		}
