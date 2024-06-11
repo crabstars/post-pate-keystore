@@ -106,7 +106,10 @@ func GetUserExists(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Fprintf(w, "User exists: %t", exists)
+	err = json.NewEncoder(w).Encode(exists)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func AddUserEntry(w http.ResponseWriter, r *http.Request) {
