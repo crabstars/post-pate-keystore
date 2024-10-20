@@ -7,9 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	dbrepo "github.com/crabstars/post-pate-keystore/db_repo"
 )
@@ -19,6 +23,36 @@ const datbase = "./keystore.db"
 var (
 	apiKey string
 	db     *sql.DB
+
+	// Prometheus metrics
+	httpRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"method", "endpoint", "status"},
+	)
+	httpRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "Duration of HTTP requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "endpoint"},
+	)
+	dbConnectionsOpen = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "db_connections_open",
+			Help: "Number of open database connections",
+		},
+	)
+	healthStatus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "app_health_status",
+			Help: "Current health status of the application",
+		},
+		[]string{"status"},
+	)
 )
 
 func main() {
@@ -40,18 +74,55 @@ func main() {
 	if os.IsNotExist(databaseExistsErr) {
 		dbrepo.CreateInitialSchema(db)
 	}
+	db.SetMaxOpenConns(10)
+	go monitorDBStats(db)
+	go monitorHealth()
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /user/{userId}/exists", AuthMiddleware(GetUserExists))
-	mux.HandleFunc("GET /user/{userId}/entry", AuthMiddleware(GetUserEntry))
-	mux.HandleFunc("GET /health", AuthMiddleware(HealthCheck))
-	mux.HandleFunc("POST /user/{userId}/entry", AuthMiddleware(AddUserEntry))
-	mux.HandleFunc("DELETE /user/{userId}/entry", AuthMiddleware(DeleteUserEntry))
-
+	mux.Handle("/metrics", AuthMiddleware(promhttp.Handler().ServeHTTP))
+	mux.HandleFunc("GET /user/{userId}/exists", instrumentHandler("GET", "UserExists", AuthMiddleware(GetUserExists)))
+	mux.HandleFunc("GET /user/{userId}/entry", instrumentHandler("GET", "UserEntry", AuthMiddleware(GetUserEntry)))
+	mux.HandleFunc("POST /user/{userId}/entry", instrumentHandler("POST", "UserEntry", AuthMiddleware(AddUserEntry)))
+	mux.HandleFunc("DELETE /user/{userId}/entry", instrumentHandler("DELETE", "UserEntry", AuthMiddleware(DeleteUserEntry)))
 	if err = http.ListenAndServe("localhost:8081", mux); err != nil {
 		log.Fatal(err)
 	}
+}
+func monitorDBStats(db *sql.DB) {
+	for {
+		stats := db.Stats()
+		dbConnectionsOpen.Set(float64(stats.OpenConnections))
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func monitorHealth() {
+	for {
+		HealthCheck()
+		time.Sleep(5 * time.Second)
+	}
+}
+func instrumentHandler(method, endpoint string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(rw, r)
+		duration := time.Since(start).Seconds()
+
+		httpRequestsTotal.WithLabelValues(method, endpoint, fmt.Sprintf("%d", rw.statusCode)).Inc()
+		httpRequestDuration.WithLabelValues(method, endpoint).Observe(duration)
+	}
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 func LogMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -75,13 +146,29 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func HealthCheck(w http.ResponseWriter, r *http.Request) {
-	err := dbrepo.HealthCheck(db)
-	if err != nil {
-		log.Println(err.Error())
-		http.Error(w, "Unhealthy", http.StatusInternalServerError)
+type HealthStatus struct {
+	Status      string `json:"status"`
+	DBStatus    string `json:"db_status"`
+	Connections int    `json:"db_connections"`
+	Uptime      string `json:"uptime"`
+	Version     string `json:"version"`
+}
+
+var startTime = time.Now()
+
+func HealthCheck() {
+	status := HealthStatus{
+		Status:   "healthy",
+		DBStatus: "up",
 	}
-	w.Write([]byte("Healthy"))
+
+	err := db.Ping()
+	if err != nil {
+		status.Status = "unhealthy"
+		status.DBStatus = "down"
+	}
+
+	healthStatus.With(prometheus.Labels{"status": status.Status}).Set(1)
 }
 
 func GetUserEntry(w http.ResponseWriter, r *http.Request) {
