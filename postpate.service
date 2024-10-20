@@ -1,0 +1,23 @@
+[Unit]
+Description=PostPateKeystore
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/post-pate-keystore
+ExecStart=/root/post-pate-keystore/post-pate-keystore
+Restart=always
+RestartSec=5
+# Set any environment variables you need
+#Environment=PORT=8080
+
+[Install]
+WantedBy=multi-user.target
+
+
+# How to
+# Create under /etc/systemd/system/postpate.service
+# sudo systemctl daemon-reload
+# sudo systemctl enable postpate.service
+# sudo systemctl start postpate.service
+# sudo systemctl status postpate.service
